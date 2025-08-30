@@ -43,8 +43,8 @@ def create_sliding_windows(data, sequence_length, target_columns):
     # - Return X and y as NumPy arrays.
     X, y = [], []
     for i in range(len(data) - sequence_length):
-        X.append(data.iloc[i:i + sequence_length].values)
-        y.append(data.iloc[i + sequence_length][target_columns].values)
+        X.append(data[i:i + sequence_length])
+        y.append(data[i + sequence_length][target_columns])
     
     return np.array(X), np.array(y)
 

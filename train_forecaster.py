@@ -1,59 +1,80 @@
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler 
 
 from generate_telemetry import generate_telemetry, create_sliding_windows
 
 if __name__ == "__main__":
+    # Generate and split data
     SEQUENCE_LENGTH = 20
     telemetry_data = generate_telemetry()
-    X, Y = create_sliding_windows(telemetry_data, SEQUENCE_LENGTH, target_columns=telemetry_data.columns)
-
-    # Perform a chronological train/test split.
-    # Using the %80 for training and %20 for validation
+    
+    # Chronological split on the DataFrame BEFORE scaling
     split_ratio = 0.8
-    split_index = int(len(X) * split_ratio)
-    X_train, X_val = X[:split_index], X[split_index:]
-    Y_train, Y_val = Y[:split_index], Y[split_index:]
+    split_index = int(len(telemetry_data) * split_ratio)
+    train_df = telemetry_data.iloc[:split_index]
+    val_df = telemetry_data.iloc[split_index:]
 
-    print(f"Training data shape: X={X_train.shape}, Y={Y_train.shape}")
-    print(f"Validation data shape: X={X_val.shape}, Y={Y_val.shape}")
+    # Scale the data
+    # Create the scaler and fit it ONLY on the training data
+    scaler = MinMaxScaler()
+    scaler.fit(train_df)
+    
+    # Transform both the training and validation data
+    scaled_train_data = scaler.transform(train_df)
+    scaled_val_data = scaler.transform(val_df)
+    
+    # --- 3. Create Sliding Windows from SCALED data ---
+    X_train, y_train = create_sliding_windows(scaled_train_data, SEQUENCE_LENGTH, target_columns=range(scaled_train_data.shape[1]))
+    X_val, y_val = create_sliding_windows(scaled_val_data, SEQUENCE_LENGTH, target_columns=range(scaled_val_data.shape[1]))
 
-    # Define the LSTM model
+    print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
+    print(f"Validation data shape: X={X_val.shape}, y={y_val.shape}")
+
+    # --- 4. Define and Compile the LSTM Model ---
     model = Sequential([
-        LSTM(64, input_shape=(SEQUENCE_LENGTH, X_train.shape[2])),
-        Dense(Y_train.shape[1])
+        LSTM(units=64, input_shape=(SEQUENCE_LENGTH, X_train.shape[2])),
+        Dense(units=X_train.shape[2])
     ])
-
-    model.compile(
-        optimizer='adam',
-        loss='mean_squared_error'
-    )
+    
+    optimizer = Adam(learning_rate=0.001) # We can try a slightly higher LR with scaled data
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
     model.summary()
 
-    # Train the model
-    print("\nTraining the LSTM forecaster...")
+    # --- 5. Train the Model ---
+    print("\nTraining the LSTM forecaster on SCALED data...")
     history = model.fit( 
         X_train, 
-        Y_train, 
-        epochs=20, 
-        validation_data=(X_val, Y_val)
+        y_train, 
+        epochs=30,
+        validation_data=(X_val, y_val),
+        batch_size=32,
+        verbose=2
     )
 
-    # Evaluate the model and visualize results
+    # --- 6. Evaluate and Visualize ---
     print("\nEvaluating and plotting results...")
-    # Use the trained model to make predictions on the validation set (X_val).
-    predictions = model.predict(X_val)
+    # Predict on the scaled validation data
+    scaled_predictions = model.predict(X_val)
+    
+    # CRITICAL: Inverse transform the predictions to bring them back to the original scale
+    predictions = scaler.inverse_transform(scaled_predictions)
+    
+    # Also, inverse transform the true validation labels for a fair comparison
+    true_values = scaler.inverse_transform(y_val)
+
     # Create a plot to compare the predictions with the true values
-    # We'll just visualize the 'roll' channel (index 0) for clarity.
     plt.figure(figsize=(15, 6))
-    plt.title("LSTM Forecasting Results for 'Roll' Sensor")
-    plt.plot(Y_val[:, 0], label="True Values", color='blue')
+    plt.title("LSTM Forecasting Results for 'Roll' Sensor (Corrected)")
+    plt.plot(true_values[:, 0], label="True Values", color='blue')
     plt.plot(predictions[:, 0], label="Predictions", color='red', linestyle='--')
     plt.xlabel("Time Step (in validation set)")
-    plt.ylabel("Roll Value")
+    plt.ylabel("Roll Value (Original Scale)")
     plt.legend()
     plt.grid(True)
     plt.show()
