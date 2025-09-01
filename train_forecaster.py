@@ -5,33 +5,12 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler 
-
-from generate_telemetry import generate_telemetry, create_sliding_windows
+from data_loader import LoadData
 
 if __name__ == "__main__":
     # Generate and split data
-    SEQUENCE_LENGTH = 20
-    telemetry_data = generate_telemetry()
-    
-    # Chronological split on the DataFrame BEFORE scaling
-    split_ratio = 0.8
-    split_index = int(len(telemetry_data) * split_ratio)
-    train_df = telemetry_data.iloc[:split_index]
-    val_df = telemetry_data.iloc[split_index:]
-
-    # Scale the data
-    # Create the scaler and fit it ONLY on the training data
-    scaler = MinMaxScaler()
-    scaler.fit(train_df)
-    
-    # Transform both the training and validation data
-    scaled_train_data = scaler.transform(train_df)
-    scaled_val_data = scaler.transform(val_df)
-    
-    # --- 3. Create Sliding Windows from SCALED data ---
-    X_train, y_train = create_sliding_windows(scaled_train_data, SEQUENCE_LENGTH, target_columns=range(scaled_train_data.shape[1]))
-    X_val, y_val = create_sliding_windows(scaled_val_data, SEQUENCE_LENGTH, target_columns=range(scaled_val_data.shape[1]))
+    SEQUENCE_LENGTH = 60
+    X_train, y_train, X_val, y_val = LoadData(SEQUENCE_LENGTH)
 
     print(f"Training data shape: X={X_train.shape}, y={y_train.shape}")
     print(f"Validation data shape: X={X_val.shape}, y={y_val.shape}")
